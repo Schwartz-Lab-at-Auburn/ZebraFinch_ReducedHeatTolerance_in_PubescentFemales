@@ -1,0 +1,820 @@
+---
+title: "MS1: Predictors of Sex-Specific Heat Stress Death"
+output: html_document
+date: "2025-11-08"
+---
+
+# Variables include:
+#   - Mortality outcome (Died_InTrt in this script, in the manuscript referred to as "Succumbed")
+#   - Demographic variables (Sex, AgeCategory- in this script Younger(Pubescent in manuscript) or Older(Young Adult in manuscript))
+#   - Baseline blood measures (Glucose, Ketone, Hematocrit, Corticosterone, Mitochondrial Copy Number, Telomeres)
+#   - Treatments: A (Control), B (Heat-Stress)
+
+
+# Load Libraries
+```{r}
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(logistf) 
+library(lme4)
+library(car)
+library(ggeffects)
+library(tibble)
+
+```
+
+# Clear memory, set working directory, read in datafile & define plot theme
+```{r}
+
+# Clears memory
+rm(list=ls(all = TRUE))
+
+#Set working directory (assumes data file is available in same location as code)
+current_path = rstudioapi::getActiveDocumentContext()$path 
+
+#Read Data File
+AHDB_Exp1_MS1 <- read.csv("AHDB_Exp1_MS1.csv")
+str(AHDB_Exp1_MS1)
+
+# Define Plot Theme
+plot_theme <- theme_classic(base_size = 18) +
+  theme(axis.title.y = element_text(vjust = 1.5), 
+        axis.title.x = element_blank()) +
+  theme(plot.margin = unit(c(.3, .3, .6, .6), "cm"), 
+        line = element_line(linewidth = 1.25)) + 
+  theme(axis.line.x = element_line(colour = "black", linewidth = 1.25),
+        axis.line.y = element_line(colour = "black", linewidth = 1.25)) + 
+  theme(axis.text.x = element_text(angle = 360, hjust = .5, 
+                                   margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"), 
+                                   color = "black"),
+        axis.text.y = element_text(margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"), 
+                                   color = "black")) +
+  theme(axis.ticks.length = unit(-0.3, "cm"),
+        axis.ticks = element_line(color = "black", linewidth = 1.25)) + 
+  theme(panel.spacing = unit(2, "lines")) +
+  theme(strip.background = element_blank()) +
+  #theme(legend.position = "none") + 
+  theme(plot.title = element_blank()) 
+```
+### Data Processing & Filtering 
+# This is a post hoc analysis of heat-stress induced mortality, therefore treatment A (control) was removed due to individuals not experiencing the heat treatment
+
+
+```{r}
+
+#Convert Died in Treatment to factor
+AHDB_Exp1_MS1 <- AHDB_Exp1_MS1 %>%
+  mutate(
+    Died_InTrt = factor(Died_InTrt,
+                        levels = c("No", "Yes")))  
+
+
+# Define columns to convert to numeric 
+
+cols_to_convert <- c("Glucose_1", "Glucose_2", "Glucose_3",
+                     "Ketone_1", "Ketone_2", "Ketone_3", "Hematocrit")
+
+# Replace "No" with NA in the specified columns
+AHDB_Exp1_MS1[cols_to_convert] <- lapply(AHDB_Exp1_MS1[cols_to_convert], function(x) {
+  x[x == "No"] <- NA
+  x
+})
+
+# Convert these columns to numeric
+AHDB_Exp1_MS1[cols_to_convert] <- lapply(AHDB_Exp1_MS1[cols_to_convert], as.numeric)
+
+# Calculate average values for Glucose and Ketones
+AHDB_Exp1_MS1$Glucose_Avg <- rowMeans(AHDB_Exp1_MS1[, c("Glucose_1", "Glucose_2", "Glucose_3")],
+                                                               na.rm = TRUE)
+AHDB_Exp1_MS1$Ketone_Avg <- rowMeans(AHDB_Exp1_MS1[, c("Ketone_1", "Ketone_2", "Ketone_3")],
+                                                              na.rm = TRUE)
+
+
+# Create a Female ZEFI baseline dataset for Hypothesis 2
+AHDB_Exp1_MS1_FemaleOnly <- AHDB_Exp1_MS1 %>%
+  filter(
+    Sex           == "F",
+    TimePoint     == "Baseline"
+  )
+
+# Create a Younger Female ZEFI baseline dataset Hypothesis 3
+AHDB_Baseline_YoungerFemale <- AHDB_Exp1_MS1 %>%
+  filter(
+    Sex           == "F",
+    AgeCategory     == "Younger"
+  )
+
+```
+
+### Data Analysis 
+## Hypothesis 1 . Females are more likely to die from acute heat (~ 43 – 43.5C for 5 hours) than males.
+
+# Calculate Sample Size by Sex (Does not account for age)
+
+```{r}
+
+AHDB_Exp1_MS1 %>%
+  distinct(ID_Band, Sex) %>%
+  summarise(
+    Total   = n(),
+    Males   = sum(Sex == "M"),
+    Females = sum(Sex == "F")
+  )
+
+
+# Total sample: 87
+# Females: 68
+```
+
+# Firth Model -> Sex 
+# This runs Firth's logistic regression with the penalized likelihood approach
+# Useful for data with reduced sample size and complete separation in variables (DeathInTrt - No Males Died)
+
+```{r}
+
+firth_fit_sex <- logistf(Died_InTrt ~  Sex ,  
+                         data = AHDB_Exp1_MS1)
+summary(firth_fit_sex)
+
+exp(coef(firth_fit_sex)) 
+exp(confint(firth_fit_sex))
+
+# Results : P = 5.991419e-02 = 0.0599
+```
+
+# Calculate pseudo-R2 (Proportion of variation of independent variable explained by the dependent variable)
+```{r}
+
+ll.null <- firth_fit_sex$loglik[1]
+ll.proposed <- firth_fit_sex$loglik[2]
+pseudoR2 <- (ll.proposed - ll.null) / ll.null
+cat("Pseudo R²:", pseudoR2, "\n")
+
+# Result: 0.05930259
+```
+
+# Predicted probabilities for each Sex
+
+```{r}
+death_data <- data.frame(Sex = c("M", "F"))
+predicted_prob_sex <- predict(firth_fit_sex, death_data, type = "response")
+prob_table <- data.frame(Sex = death_data$Sex, Predicted_Probability = predicted_prob_sex)
+print(prob_table)
+
+# Result:
+#  Sex Predicted_Probability
+#1   M             0.0250000
+#2   F             0.1666667
+```
+
+
+# Calculate observed death proportions 
+
+```{r}
+obs_death <- AHDB_Exp1_MS1 %>%
+  mutate(Death = if_else(Died_InTrt == "Yes", 1, 0)) %>%
+  group_by(Sex, AgeCategory) %>%
+  summarize(
+    N = n(),
+    DeathCount = sum(Death, na.rm = TRUE),
+    Proportion = DeathCount / N
+  )
+print(obs_death)
+
+# Result:
+#  Sex   AgeCategory     N DeathCount Proportion
+#  <chr> <chr>       <int>      <dbl>      <dbl>
+#1 F     Older          23          1     0.0435
+#2 F     Younger        45         10     0.222 
+#3 M     Older           5          0     0     
+#4 M     Younger        14          0     0
+```
+
+```{r, fig.width=8, fig.height=12}
+
+# Dot Plot
+ggplot(obs_death, aes(x = AgeCategory , y = Proportion)) +
+  geom_point(aes(color = Sex), size = 5) +  # Points
+  labs(
+    title = "High Mortality of Young Females During Acute Heat",
+    x = "Age Category",
+    y = "Observed Death Proportions"
+  ) +
+  theme_classic()
+
+# Bar Graph
+# Create a plotting version of the data with a tiny positive value for zero bars
+obs_death <- obs_death %>%
+  mutate(
+    label = paste0(DeathCount, "/", N),
+    Proportion_plot = if_else(Proportion == 0, 0.003, Proportion)
+  )
+
+p <- ggplot(obs_death, aes(x = AgeCategory, y = Proportion_plot, fill = Sex)) +
+  geom_col(
+    position = position_dodge(width = 0.9),
+    width = 0.8
+  ) +
+  geom_text(
+    aes(label = label),
+    position = position_dodge(width = 0.9),
+    vjust = -0.5,
+    size = 6
+  ) +
+  scale_fill_manual(values = c("#D3D3D3", "#000000")) +
+  scale_x_discrete(
+    limits = c("Younger", "Older"),
+    labels = c(
+      "Younger" = "Pubescent Adult",
+      "Older" = "Young Adult"
+    )
+  ) +
+  scale_y_continuous(
+  limits = c(-0.01, 0.27),
+  breaks = seq(0, 0.25, 0.05)
+  ) +
+  labs(
+    x = "Age Category",
+    y = "Proportion Succumbed"
+  ) +
+  theme_classic(base_size = 18)
+p
+
+ggsave(
+  filename = "Proportion_Succumbed.png",
+  plot = p,
+  width = 8,
+  height = 12,
+  units = "in",
+  dpi = 600
+)
+
+ggsave("Combined_Blood_ViolinPlot.png", combined_blood_measure_plot, width = 8, height = 12)
+
+```
+
+# Firth Model - Sex + Age 
+```{r}
+
+firth_fit_sex_age<- logistf(Died_InTrt ~  Sex + AgeCategory, #+ Sex*AgeCategory,  
+                            data = AHDB_Exp1_MS1)
+summary(firth_fit_sex_age)
+#Age & Sex interaction was removed by backward regression 
+
+exp(coef(firth_fit_sex_age)) 
+exp(confint(firth_fit_sex_age))
+
+# Result:
+# Sex p= 4.370709e-02 = 0.044*
+# Age p= 6.214754e-02 = 0.062
+```
+# Calculate pseudo-R2 (Proportion of variation of independent variable explained by the dependent variable)
+
+```{r}
+
+ll.null <- firth_fit_sex_age$loglik[1]
+ll.proposed <- firth_fit_sex_age$loglik[2]
+pseudoR2 <- (ll.proposed - ll.null) / ll.null
+cat("Pseudo R²:", pseudoR2, "\n")
+
+# Result:
+# Pseudo R²: 0.1266361
+```
+
+# Calculate Predicted Probabilities with both Age & Sex
+
+```{r}
+
+death_data <- data.frame(
+  Sex         = c("M","F","F","M"),
+  AgeCategory = c("Younger","Older","Younger","Older")
+)
+predicted_prob_sex_age <- predict(firth_fit_sex_age, death_data, type = "response")
+prob_table_sex_age <- data.frame(Sex = death_data$Sex, AgeCategory =death_data$AgeCategory, Predicted_Probability = predicted_prob_sex_age)
+print(prob_table_sex_age)
+
+# Results: Younger Females have a 22.8% likelihood of succumbing to acute heat exposure compared to 3.2% for the younger males whereas older females have 6.3% chance of mortality compared to 0.7% for older males. 
+
+```
+## Hypothesis 2. Younger adult females are more likely to die from acute heat (~ 43–43.5C for 5 hours) than older young adult females. 
+
+# Firth - Females Only
+
+```{r}
+firth_fit_age <- logistf(Died_InTrt ~  AgeCategory, 
+                         data = AHDB_Exp1_MS1_FemaleOnly)
+summary(firth_fit_age)
+exp(coef(firth_fit_age)) 
+exp(confint(firth_fit_age))
+
+# Result:
+# Age p= 6.141039e-02 = 0.061
+```
+
+# Calculate "Pseudo R²
+
+```{r}
+
+ll.null <- firth_fit_age$loglik[1]
+ll.proposed <- firth_fit_age$loglik[2]
+pseudoR2 <- (ll.proposed - ll.null) / ll.null
+cat("Pseudo R²:", pseudoR2, "\n")
+
+# Result:
+# Pseudo R²: 0.06515706
+```
+
+# Predicted probabilities for each AgeCategory
+
+```{r}
+
+deathdata_H2 <- data.frame(AgeCategory = c("Older", "Younger"))
+predicted_prob_age <- predict(firth_fit_age, newdata = deathdata_H2, type = "response")
+prob_table <- data.frame(Age = deathdata_H2$Age, Predicted_Probability = predicted_prob_age)
+print(prob_table)
+
+# Results:
+#      Age Predicted_Probability
+#1   Older             0.0625000
+#2 Younger             0.2282609
+```
+
+## Hypothesis 3. Among young adult females, there will be metabolic or damage variables in the baseline blood samples (2 weeks prior) may correlated with probability of dying due to acute heat (~43 – 43.5C for 5 hours). 
+
+# Remove rows with missing values
+```{r}
+
+Younger_females_Glu <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Glucose_Avg))
+
+```
+
+# Calculate Mean Glucose Values & plot residuals
+
+```{r}
+
+mean(Younger_females_Glu$Glucose_Avg)
+sd(Younger_females_Glu$Glucose_Avg)
+min(Younger_females_Glu$Glucose_Avg)
+max(Younger_females_Glu$Glucose_Avg)
+hist(Younger_females_Glu$Glucose_Avg)
+
+# Results:
+#[1] 229.6326
+#[1] 41.14476
+#[1] 157
+#[1] 318.5
+```
+
+# Calcualte Sample size For Glucose Model
+
+```{r}
+
+Younger_females_Glu %>%
+  distinct(ID_Band, Sex) %>%
+  summarise(
+    Total   = n(),
+    Females = sum(Sex == "F")
+  )
+
+# Result: 44
+```
+```{r}
+
+Glucose_Model <- glm(Died_InTrt ~ Glucose_Avg,
+                     data = Younger_females_Glu,
+                     family = binomial)
+
+summary(Glucose_Model)
+
+# Results:
+# P = 0.392
+```
+# Remove rows with missing values & create ketone only subsetted dataset
+```{r}
+
+Younger_females_Ket <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Ketone_Avg))
+
+```
+
+# Calculate Mean Ketone Values & plot residual
+
+```{r}
+
+mean(Younger_females_Ket$Ketone_Avg)
+sd(Younger_females_Ket$Ketone_Avg)
+min(Younger_females_Ket$Ketone_Avg)
+max(Younger_females_Ket$Ketone_Avg)
+hist(Younger_females_Ket$Ketone_Avg)
+
+# Result:
+#[1] 0.505814
+#[1] 0.229702
+#[1] 0.3
+#[1] 1.8
+```
+
+# Calcualte Sample size For Ketone Model (Includes Lysed Plasma Appearance Individuals)
+```{r}
+
+Younger_females_Ket %>%
+  distinct(ID_Band, Sex) %>%
+  summarise(
+    Total   = n(),
+    Females = sum(Sex == "F")
+  )
+
+# Sample Size: 43
+```
+# GLMER -> Ketone Model (Includes Lysed Plasma Individuals)
+
+```{r}
+
+Ketone_Model <- glm(Died_InTrt ~ Ketone_Avg,
+                      data = Younger_females_Ket,
+                      family = binomial)
+
+summary(Ketone_Model)
+
+# P = 0.481
+```
+# Remove rows with missing values & create hematocrit dataset
+```{r}
+
+Younger_females_Hem <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Hematocrit))
+
+```
+
+# Calculate Mean Hematocrit Values & plot residuals
+```{r}
+
+mean(Younger_females_Hem$Hematocrit)
+sd(Younger_females_Hem$Hematocrit)
+min(Younger_females_Hem$Hematocrit)
+max(Younger_females_Hem$Hematocrit)
+hist(Younger_females_Hem$Hematocrit)
+
+# Results:
+#[1] 53.89024
+#[1] 2.553214
+#[1] 50
+#[1] 58
+```
+# Calculate Sample Size
+
+```{r}
+
+Younger_females_Hem %>%
+  distinct(ID_Band, Sex) %>%
+  summarise(
+    Total   = n(),
+    Females = sum(Sex == "F")
+  )
+
+# Sample Size: 41
+```
+
+# GLMER -> Hematocrit Model (Includes Lysed Plasma Individuals)
+
+```{r}
+
+Hematocrit_Model <- glm(Died_InTrt ~ Hematocrit,
+                        data = Younger_females_Hem,
+                        family = binomial)
+
+summary(Hematocrit_Model)
+
+# Results: P = 0.415
+```
+
+# Remove rows with missing values & create CORT dataset
+
+```{r}
+
+Younger_females_CORT <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(CORT.ng.mL.))
+
+```
+
+# Calculate Mean CORT Values & plot residuals
+```{r}
+
+mean(Younger_females_CORT$CORT.ng.mL.)
+sd(Younger_females_CORT$CORT.ng.mL.)
+min(Younger_females_CORT$CORT.ng.mL.)
+max(Younger_females_CORT$CORT.ng.mL.)
+hist(Younger_females_CORT$CORT.ng.mL.)
+
+# Results:
+#[1] 0.9813272
+#[1] 0.8020953
+#[1] 0.000500511
+#[1] 3.342984
+```
+
+# Calculate Sample Size
+
+```{r}
+
+Younger_females_CORT %>%
+  distinct(ID_Band, Sex) %>%
+  summarise(
+    Total   = n(),
+    Females = sum(Sex == "F")
+  )
+
+# Sample Size: 43
+```
+
+
+```{r}
+
+CORT_Model <- glm(Died_InTrt ~ CORT.ng.mL.,
+                        data = Younger_females_CORT,
+                        family = binomial)
+
+summary(CORT_Model)
+
+# P = 0.9985
+```
+
+# Remove rows with missing values & create Mito dataset
+```{r}
+
+Younger_females_Mito <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Blood_mtDNA.Mean))
+
+```
+
+# Calculate Mean mtDNA Values & plot residuals
+```{r}
+
+mean(Younger_females_Mito$Blood_mtDNA.Mean)
+sd(Younger_females_Mito$Blood_mtDNA.Mean)
+min(Younger_females_Mito$Blood_mtDNA.Mean)
+max(Younger_females_Mito$Blood_mtDNA.Mean)
+hist(Younger_females_Mito$Blood_mtDNA.Mean)
+
+# Results:
+#[1] 0.3158152
+#[1] 0.2003234
+#[1] 0.06489803
+#[1] 0.7780359
+```
+
+# GLMER -> mtDNA Copy Number Model
+```{r}
+
+Mito_Model <- glm(Died_InTrt ~  Blood_mtDNA.Mean,
+                         data = Younger_females_Mito,
+                         family = binomial)
+
+summary(Mito_Model)
+
+# Results not significant (p=0.429)
+```
+
+# Remove rows with missing values & create Telomeres dataset
+```{r}
+
+Younger_females_Telo <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Blood_Telomeres.per.cell))
+
+```
+
+# Calculate Mean T/S Values & plot residuals
+```{r}
+
+mean(Younger_females_Telo$Blood_Telomeres.per.cell)
+sd(Younger_females_Telo$Blood_Telomeres.per.cell)
+min(Younger_females_Telo$Blood_Telomeres.per.cell)
+max(Younger_females_Telo$Blood_Telomeres.per.cell)
+hist(Younger_females_Telo$Blood_Telomeres.per.cell)
+
+# Results:
+#[1] 853.001
+#[1] 435.0181
+#[1] 362.944
+#[1] 1629.904
+```
+
+# GLMER -> Telomere (T/S ratio) Model (WITH LYSED BUT NO Mom_ID)
+```{r}
+
+Telomeres_Model <- glm(Died_InTrt ~  Blood_Telomeres.per.cell,
+                         data = Younger_females_Telo,
+                         family = binomial)
+
+summary(Telomeres_Model)
+
+# Results not significant (p=0.942)
+```
+
+# Double checking SCNAG
+```{r}
+
+# Remove rows with missing values & create SCNAG dataset
+Younger_females_SCNAG <- AHDB_Baseline_YoungerFemale %>%
+  filter(!is.na(Blood_Cq.Mean_SCNAG))
+
+
+SCNAG <- glm(Died_InTrt ~  Blood_Cq.Mean_SCNAG,
+                         data = Younger_females_SCNAG,
+                         family = binomial)
+
+summary(SCNAG)
+
+# Results not significant (p=0.848)
+
+# Plot
+ggplot(Younger_females_SCNAG, aes(x = Died_InTrt, y = Blood_Cq.Mean_SCNAG)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.6) +  # Violin by group
+  geom_jitter(width = 0.1, alpha = 0.7, size = 1.5, color = "black") +  # Add data points
+  labs(
+    x = "Died In Treatment?",
+    y = "Cq.Mean_SCNAG"
+  ) +
+  theme_classic()
+
+```
+
+# Create violin plots for blood measures
+# scale_fill_manual(values = c("#C0504D", "#153F70")) +  # Custom colors for ESEB poster
+
+```{r, fig.width=8, fig.height=12}
+
+# Glucose Plot
+p1 <- ggplot(Younger_females_Glu, aes(x = Died_InTrt, y = Glucose_Avg)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black", "purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "Avg. Glucose"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+# Ketone Plot
+p2 <- ggplot(Younger_females_Ket, aes(x = Died_InTrt, y = Ketone_Avg)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black", "purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "Avg. Ketone"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+# Hematocrit Plot
+p3 <- ggplot(Younger_females_Hem, aes(x = Died_InTrt, y = Hematocrit)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black","purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "Log-transformed Hematocrit"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+# mtDNA copy number Plot
+p5 <- ggplot(Younger_females_Mito, aes(x = Died_InTrt, y = Blood_mtDNA.Mean)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black", "purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "Avg. mtDNA Copy Number"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+# Telomeres Plot
+p6 <- ggplot(Younger_females_Telo, aes(x = Died_InTrt, y = Blood_Telomeres.per.cell)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black", "purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "Telomeres (T/S ratio)"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+# CORT Plot
+p4 <- ggplot(Younger_females_CORT, aes(x = Died_InTrt, y = CORT.ng.mL.)) +
+  geom_violin(aes(fill = Died_InTrt), trim = FALSE, alpha = 0.9) +  # Violin by group
+  geom_jitter(
+  width = 0.1,
+  shape = 21,      # Circle with fill and outline
+  fill = "white",  # Interior color
+  color = "black", # Outline color
+  stroke = 0.5,    # Outline thickness
+  alpha = 0.7,
+  size = 1.5) +
+  scale_fill_manual(values = c("black", "purple")) +  # Custom colors
+  labs(
+    x = "Succumbed to acute heat?",
+    y = "CORT (ng/ml)"
+  ) +
+  theme_classic(base_size = 18) +
+  theme(legend.position = "none")  # Removes the legend
+
+library(cowplot)
+
+# Combine into 1 row and 3 columns
+combined_blood_measure_plot <- plot_grid(p1, p2, p3, p4, p5, p6, nrow = 3)
+combined_blood_measure_plot
+
+ggsave("Combined_Blood_ViolinPlot.png", combined_blood_measure_plot, width = 8, height = 12)
+
+```
+
+
+#Export Model Stats (For all Models)
+
+```{r}
+
+models <- list(
+  Glucose_Model  = Glucose_Model,
+  Ketone_Model   = Ketone_Model,
+  Hematocrit_Model = Hematocrit_Model,
+  Telomeres_Model = Telomeres_Model,
+  Mito_Model = Mito_Model,
+  CORT_Model = CORT_Model
+)
+
+extract_model_info <- function(model, model_name) {
+  sm <- summary(model)
+  coefs <- as.data.frame(sm$coefficients)
+  
+  # Faster CIs for GLMs (avoids profiling)
+  ci <- confint.default(model)
+  
+  out <- cbind(
+    Model = model_name,
+    Predictor = rownames(coefs),
+    Estimate = coefs[,1],
+    Std_Error = coefs[,2],
+    Test_Stat = coefs[,3],
+    P_Value = coefs[,4],
+    CI_Lower = ci[,1],
+    CI_Upper = ci[,2]
+  )
+  
+  rownames(out) <- NULL
+  return(as.data.frame(out))
+}
+
+Model_Results <- bind_rows(
+  lapply(names(models), function(nm) extract_model_info(models[[nm]], nm))
+)
+
+Model_Results
+
+write.csv(Model_Results, "Model_Summary_Table.csv", row.names = FALSE)
+
+```
+
