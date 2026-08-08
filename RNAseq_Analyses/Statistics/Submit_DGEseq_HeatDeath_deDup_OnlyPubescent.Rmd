@@ -1,0 +1,364 @@
+---
+title: "ZebraFinchHeatDeath(Exp1)_RNAseqAnalyses"
+output: html_notebook
+---
+
+#DESeq2 Analyses
+
+#### Resources and Citations:
+Love et al 2016 DESeq2 GenomeBiology
+ https://bioconductor.riken.jp/packages/2.14/bioc/vignettes/DESeq2/inst/doc/DESeq2.pdf
+http://master.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+#### Install the DESeq2 package if you have not already
+
+---
+  #try http:// if https:// URLs are not supported
+  # if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+ BiocManager::install("DESeq2")
+
+---
+
+## Load the DESeq2 library 
+library(DESeq2)
+
+  ##### If needed, use the Session menu to set working directory To Source File Directory
+
+# Dataset:Deduplicated Pipeline to obtain read counts for a complete dataset of blood RNAseq sameples.
+## Individuals used in this analyses: Baseline blood samples, from pubescent females (N=17), that either succumbed (n=10), or survived (n=7) to an acute 5 hour heat stress.
+---
+##  1.1 Input data   ##############
+  ## Input the count data, the gene(/transcript) count matrix and labels
+  ## this starts from with output from PrepDE.py from Ballgown folder.
+```{r}
+countdata.1 <- as.matrix(read.csv("gene_count_matrix_Dedup_BaselineHeatDeath_gene_ids_OnlyPubescent.csv", row.names="gene_id"))
+dim(countdata.1)
+head(countdata.1)
+```
+
+## Input the meta data or phenotype data
+# Note: The PHENO_DATA file contains information on each sample including whether they Succumb to the heat stres (Yes or No), and that this is paired-end RNAseq data.
+```{r}
+coldata.1 <-(read.table("PHENO_DATA_Baseline_DeDupHeatDeath_OnlyPubescent_n19.txt", header=TRUE, row.names=1))
+dim(coldata.1)
+head(coldata.1)
+```
+### Check all sample IDs in colData are also in CountData and match their orders
+```{r}
+all(rownames(coldata.1) %in% colnames(countdata.1))
+counts.1 <- countdata.1[, rownames(coldata.1)]
+all(rownames(coldata.1) == colnames(counts.1))
+```
+
+## Create the DESEQ dataset and define the statistical model (page 6 of the manual)
+```{r}
+dds_1 <- DESeqDataSetFromMatrix(countData = countdata.1, colData=coldata.1,  design = ~succumb)
+#look at it
+dds_1
+```
+
+### Prefiltering - filter lowly expressed genes, which have a reduced ability to detect differences among groups, and would increase the number of multiple testing.
+  ## Manual - starting at  1.3.6 
+  ## Here we perform a minimal pre-filtering to remove rows (genes) that have less than, on average across individuals, 100 reads mapped per individual.  17 individuals x 100 reads = 1700 reads. A gene must have at least 1700 reads total to be included for analysis.
+```{r}
+dds_1f <- dds_1[ rowSums(counts(dds_1)) > 1700, ]
+# How many genes are left after filtering the lowest expressed genes?
+dds_1f
+```
+
+  # Total annotated genes in genome assembly: 23511
+  # filter genes with average 100 reads per sample (1700 reads) = 9648  genes
+  
+## Set factors for statistical analyses
+  ## Succumb column in the PHENO_DATA: No is the control (survived), Yes is succumb, i.e. the "treatment group"
+# example:
+#dds$condition <- factor(dds$condition, levels=c("untreated","treated"))
+```{r}
+dds_1f$condition <- factor(dds_1f$succumb, levels=c("No","Yes"))
+```
+
+#### 1.4 Differential expression analysis
+```{r}
+dds_1f <- DESeq(dds_1f)
+res <- results(dds_1f)
+res
+```
+
+###  Evaluate results
+```{r}
+  # We can order our results table by the smallest adjusted p value:
+  resOrdered <- res[order(res$pvalue),]
+  resOrdered
+```
+  # Summarize some basic tallies using the summary function the default is p<0.1.
+```{r}
+  summary(res)
+```
+
+# How many DEG at adjusted p-values < 0.05?
+```{r}
+  sum(res$padj < 0.05, na.rm=TRUE)
+```
+
+#If the adjusted p value will be a value other than 0.1, alpha should be set to that value:
+## Here set to 0.05  
+```{r}
+  res05 <- results(dds_1f, alpha=0.05)
+  summary(res05)
+  sum(res05$padj < 0.05, na.rm=TRUE)
+```
+
+## write out the results file
+```{r}
+write.csv(as.data.frame(resOrdered),file="Submit_DGESeq_results_Dataset2-DeDup_Females_OnlyPubescent.csv") 
+```
+  
+#####################  
+###    1.5.1 MA-plot
+  ##plotMA shows the log2 fold changes attributable to a given variable over the meanof normalized counts. 
+  ## Points will be colored red if the adjusted p value is less than 0.1. 
+  ## Points which fall out of the window are plotted as open triangles pointing either up or down
+```{r}
+plotMA(res, main="DESeq2", ylim=c(-8,8))
+  
+  #After calling plotMA, one can use the function identify to interactively detect the row number of individual genes by clicking on the plot. 
+  # One can then recover the gene identiers by saving the resulting indices:
+idx <- identify(res$baseMean, res$log2FoldChange)
+    # after selecting a gene. You need to press escape to move on
+  rownames(res)[idx]
+```
+    
+##  1.5.2 Plot counts - sanity check!
+  # You can select the gene to plot by rowname or by numeric index.
+```{r}
+## This gene has a negative logfold change, so should be downregulated in the succumb group
+plotCounts(dds_1f, gene="THOC6", intgroup="succumb")
+```
+
+```{r}
+## You can plot the gene with th lowest adjusted P-value.
+## This gene has a postive logfold change so should be upregulated 
+plotCounts(dds_1f, gene=which.min(res$padj), intgroup="succumb")
+```
+### 2.1.2 Extracting transformed values
+```{r}
+  rld <- rlog(dds_1f)
+  vsd <- varianceStabilizingTransformation(dds_1f)
+  head(assay(rld), 3)
+``` 
+
+
+####  Make a heatmap of the top differentially expressed genes adjusted p-value < 0.1
+```{r}
+library("pheatmap")
+# Extract VSD matrix
+vsd_mat <- assay(vsd)
+
+# Order by p-value
+res_ordered <- res[order(res$pvalue), ]
+
+## Keep genes with adjusted p-value < 0.1
+res_sig <- res[!is.na(res$padj) & res$padj < 0.1, ]
+topSig_genes <- rownames(res_sig)
+mat_sig_0.1 <- vsd_mat[topSig_genes, ]
+###
+
+mat_sig <- mat_sig_0.1 
+
+### Make the Heatmap
+# Scale each gene (row) to z-scores
+mat_scaled_sig <- t(scale(t(mat_sig)))
+
+# Optional sample annotation
+annotation_col <- data.frame(
+  Condition = colData(vsd)$condition)
+rownames(annotation_col) <- colnames(mat_scaled_sig)
+
+# Heatmap
+pheatmap(
+  mat_scaled_sig,
+  annotation_col = annotation_col,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  fontsize_row = 6
+)
+```
+
+# Make a heatmap with adjusted p-values < 0.05 and color code for the manuscript
+```{r}
+## Keep genes with adjusted p-value < 0.1
+res_sig <- res[!is.na(res$padj) & res$padj < 0.05, ]
+topSig_genes <- rownames(res_sig)
+mat_sig_0.05 <- vsd_mat[topSig_genes, ]
+###
+
+mat_sig <- mat_sig_0.05 
+mat_sig
+
+### Make the Heatmap
+# Scale each gene (row) to z-scores
+mat_scaled_sig <- t(scale(t(mat_sig)))
+
+# Optional sample annotation
+annotation_col <- data.frame(
+  Condition = colData(vsd)$condition)
+rownames(annotation_col) <- colnames(mat_scaled_sig)
+
+annotation_colors <- list(
+  Succumb = c(
+    Yes = "purple",
+    No = "black"
+  )
+)
+
+colnames(annotation_col)[colnames(annotation_col) == "Condition"] <- "Succumb"
+
+# Heatmap
+pheatmap(
+  mat_scaled_sig,
+  annotation_col = annotation_col,
+  annotation_colors = annotation_colors,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  fontsize_row = 8
+)
+```
+
+  
+ ###  Make a PCA from top genes with adjusted p-value < 0.05
+```{r}
+library(ggplot2)
+library(ggrepel)
+
+# PCA expects samples in rows and genes in columns
+pca <- prcomp(t(mat_sig_0.05), scale. = TRUE)
+
+
+# Percent variance explained
+percentVar <- pca$sdev^2 / sum(pca$sdev^2)
+# Create plotting dataframe
+pca_df <- data.frame(
+  PC1 = pca$x[,1],
+  PC2 = pca$x[,2],
+  condition = colData(vsd)$condition,
+  sample = colnames(vsd)
+)
+
+
+ggplot(pca_df, aes(PC1, PC2, color = condition)) +
+  geom_point(size = 4) +
+  xlab(paste0("PC1: ", round(percentVar[1] * 100, 1), "%")) +
+  ylab(paste0("PC2: ", round(percentVar[2] * 100, 1), "%")) +
+  geom_text_repel(aes(label = sample)) +
+  scale_color_manual(values = c("Yes" = "purple",
+                                "No" = "black")) +
+  labs(color = "Succumb") +
+  theme_bw()
+
+#ggplot(pca_df, aes(PC1, PC2, color = condition)) +
+ # geom_point(size = 4) +
+#  xlab(paste0("PC1: ", round(percentVar[1] * 100, 1), "%")) +
+ # ylab(paste0("PC2: ", round(percentVar[2] * 100, 1), "%")) +
+  #geom_text_repel(aes(label = sample))  +
+  #theme_bw()  
+```
+
+### Preparing Data for GSEA. 
+##  Rename first column so it matches "gene_id" in annotation file
+```{r}
+names(resOrdered)[1]<- "gene_id" 
+```
+
+#### Make a list of all the genes ranked by the p-value and logfold change, that can be brought into GSEA 
+## example aa <- within(resOrdered, z <- x + y - 2)
+```{r}
+DGE_Rank <-  within(resOrdered, rank <- sign(log2FoldChange) * -log10(pvalue))
+DGE_Rank 
+```
+
+#subset the results so only Gene Name and rank
+```{r}
+DGErank = subset(DGE_Rank, select = c(rank) )
+DGErank
+```
+
+#remove any genes that don't ahve a name
+```{r}
+DGErank_withName <- na.omit(DGErank)
+DGErank_withName
+dim(DGErank_withName)
+```
+
+## Write out the file with the ranked list for GSEA - will use the GUI interface.
+```{r}
+write.table(as.data.frame(DGErank_withName), file="DeDup_DGErankName_OnlyPubescent.rnk", quote=FALSE, row.names=TRUE, sep = "\t")
+```
+
+####  Get the normalized expression DATA, incase need it.
+```{r}
+nt <- normTransform(dds_1f) # defaults to log2(x+1)
+head(assay(nt))
+```
+
+# make it a new dataframe
+```{r}
+NormTransExp<-assay(nt)
+summary(NormTransExp)
+head(NormTransExp)
+```
+
+# Write the Normalized Transfored Data 
+```{r}
+write.table(as.data.frame(NormTransExp), file="Dedup_NormTransExp_OnlyPubescent.txt", quote=FALSE, row.names=TRUE, sep = "\t")  
+```
+
+
+#### GSEA was conducted on the GUI interface. 
+  ##The enriched pathways were organized in to the Hallmarks.csv file for plotting.
+  ## We used AI to troubleshoot this section of code.
+```{r}
+library(ggplot2)
+Hallmark <- read.csv("Hallmarks.csv")
+
+ggplot(Hallmark,
+       aes(x = EnrichmentScore,
+           y = reorder(Name, EnrichmentScore),
+           size = GeneCount,
+           color = NOM_pvalue)) +
+
+  geom_point() +
+
+  #facet_grid(. ~ Direction) +
+
+  scale_color_gradient(
+    low = "red",
+    high = "steelblue",
+    trans = "log10",
+    name = "p-value",
+    limits = c(0.00001, 0.25),
+    guide = guide_colorbar(reverse = TRUE)
+  ) +
+
+  scale_size(range = c(3,10)) +
+
+  labs(
+    title = "GSEA Hallmarks Pathways",
+    x = "Enrichment Score",
+    y = NULL
+  ) +
+
+  theme_bw() +
+
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    strip.background = element_rect(fill = "grey85"),
+    strip.text = element_text(face = "bold"),
+    axis.text.y = element_text(size = 11)
+  )
+
+```
