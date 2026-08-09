@@ -10,14 +10,12 @@ Data were processed on a high performance computer. First, if an individual has 
 The data were processed in steps using a driver script to parallized the processing of individuals. The driver script would initiate 20 parallel processes allow 20 individuals to be processed for the steps called by that driver, until all the individuals were processed for those steps. 
   
 Run MultiQC on the fastqc folder to get summary across all the FASTQC outputs
-3. Run the pipelien - can use the 2_Driver script to do as an array job
+  - fastqc. Run MultiQC on the fastqc folder to get summary across all the FASTQC outputs
+  - deduplicate
+  - fastqc. Run MultiQC on the fastqc folder to get summary across all the FASTQC outputs
   - Trim (Trimmomatic)
-  - Run Fastqc on cleaned data
+  - Run Fastqc on cleaned data . Run MultiQC on the fastqc folder to get summary across all the FASTQC outputs
   - Map to NCBI reference genome (HiSat2)
   - Process Sam to Bam; Sort Bam, Index, Stats (Samtools)
   - Count the mapped reads to gene (Stringtie)
-4.   Run MultiQC on the CLEANED fastqc folder to get summary across all the FASTQC outputs
-     Run prepDE.py on the Stringtie folder to combine the genecounts into a single file to use for statistical analyes.
-
-See more detailed notes on the analysis here:
- /Box/NSF_Damage-Fitness project-Research/Experiment_2024Fall_AcuteHeat_DamageBiomarkers_Exp1/Data/DataAnalyses/RNAseq 
+  - Run prepDE.py on the Stringtie folder to combine the genecounts into a single file to use for statistical analyes.
