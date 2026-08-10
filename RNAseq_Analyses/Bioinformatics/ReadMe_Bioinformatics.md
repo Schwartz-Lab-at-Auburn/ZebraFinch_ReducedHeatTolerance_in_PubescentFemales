@@ -2,8 +2,9 @@
 
 ### Repository Outline and Summary
 ## Raw Data
-- The raw RNAseq data have been submitted to NCBI SRA database under BioProject XXX
-- We used the Zebra Finch Genome Assembly and corresponding annotation from NCBI RefSeq: 
+- The raw RNAseq data have been submitted to NCBI SRA database under BioProject: PRJNA1474505
+- We used the Zebra Finch Genome Assembly and corresponding annotation from NCBI RefSeq: bTaeGut7.mat accesssion GCF_048771995.1 
+ 
 
 ## Processing the data.
 Data were processed on a high performance computer. First, if an individual has two or more R1 and R2 files, then all the R1 files from a single individual were concatenated (cat) in to a single file, and all the R2 files from an indiviudal were concatenated into a single file. 
