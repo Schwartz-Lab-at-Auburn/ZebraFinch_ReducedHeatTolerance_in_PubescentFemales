@@ -662,7 +662,7 @@ p1 <- ggplot(Younger_females_Glu, aes(x = Died_InTrt, y = Glucose_Avg)) +
   scale_fill_manual(values = c("black", "purple")) +  # Custom colors
   labs(
     x = "Succumbed to acute heat?",
-    y = "Avg. Glucose"
+    y = "Glucose (mg/dL)"
   ) +
   theme_classic(base_size = 18) +
   theme(legend.position = "none")  # Removes the legend
@@ -681,7 +681,7 @@ p2 <- ggplot(Younger_females_Ket, aes(x = Died_InTrt, y = Ketone_Avg)) +
   scale_fill_manual(values = c("black", "purple")) +  # Custom colors
   labs(
     x = "Succumbed to acute heat?",
-    y = "Avg. Ketone"
+    y = "Ketone (mmol/L)"
   ) +
   theme_classic(base_size = 18) +
   theme(legend.position = "none")  # Removes the legend
@@ -700,7 +700,7 @@ p3 <- ggplot(Younger_females_Hem, aes(x = Died_InTrt, y = Hematocrit)) +
   scale_fill_manual(values = c("black","purple")) +  # Custom colors
   labs(
     x = "Succumbed to acute heat?",
-    y = "Log-transformed Hematocrit"
+    y = "Hematocrit (% RBC)"
   ) +
   theme_classic(base_size = 18) +
   theme(legend.position = "none")  # Removes the legend
@@ -719,7 +719,7 @@ p5 <- ggplot(Younger_females_Mito, aes(x = Died_InTrt, y = Blood_mtDNA.Mean)) +
   scale_fill_manual(values = c("black", "purple")) +  # Custom colors
   labs(
     x = "Succumbed to acute heat?",
-    y = "Avg. mtDNA Copy Number"
+    y = "mtDNA Copy Number"
   ) +
   theme_classic(base_size = 18) +
   theme(legend.position = "none")  # Removes the legend
