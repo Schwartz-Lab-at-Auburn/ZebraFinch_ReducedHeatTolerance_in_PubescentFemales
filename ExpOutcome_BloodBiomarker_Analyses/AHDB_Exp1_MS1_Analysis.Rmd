@@ -252,8 +252,6 @@ ggsave(
   dpi = 600
 )
 
-ggsave("Combined_Blood_ViolinPlot.png", combined_blood_measure_plot, width = 8, height = 12)
-
 ```
 
 # Firth Model - Sex + Age 
