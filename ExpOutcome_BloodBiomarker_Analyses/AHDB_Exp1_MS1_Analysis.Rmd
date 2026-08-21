@@ -770,6 +770,85 @@ ggsave("Combined_Blood_ViolinPlot.png", combined_blood_measure_plot, width = 8, 
 
 ```
 
+# Firth Model - Sex + Age_PreBleed Continuous 
+```{r}
+#Read Data File
+AHDB_Exp1_MS1_AgeCont <- read.csv("AHDB_Exp1_MS1_AgeCont.csv")
+str(AHDB_Exp1_MS1_AgeCont)
+
+AHDB_Exp1_MS1_AgeCont$Outcome <- factor(
+  AHDB_Exp1_MS1_AgeCont$Outcome,
+  levels = c("No", "Succumbed")
+)
+
+firth_fit_sex_agecont <- logistf(Outcome ~  Sex + Age_PreBleed, # + Sex*Age_PreBleed,  
+                            data = AHDB_Exp1_MS1_AgeCont)
+summary(firth_fit_sex_agecont)
+
+exp(coef(firth_fit_sex_agecont)) 
+exp(confint(firth_fit_sex_agecont))
+
+# Result:
+# Sex p= 0.03610347*
+# Age_PreBleed p= 0.03667449*
+
+firth_fit_sex_agecont_int <- logistf(Outcome ~  Sex + Age_PreBleed + Sex*Age_PreBleed,  
+                            data = AHDB_Exp1_MS1_AgeCont)
+summary(firth_fit_sex_agecont_int)
+
+exp(coef(firth_fit_sex_agecont_int)) 
+exp(confint(firth_fit_sex_agecont_int))
+
+# Results with interaction: 
+# SexM              p= 0.1166956      
+# Age_PreBleed      p= 0.0362673*      
+# SexM:Age_PreBleed p= 0.2723878
+
+# Compare the two models (with and without interaction)
+summary(firth_fit_sex_agecont_int, firth_fit_sex_agecont)
+
+# 1.640555e-06*
+```
+
+# Firth Model - Sex + Age_Treatment Continuous 
+```{r}
+#Read Data File
+AHDB_Exp1_MS1_AgeCont <- read.csv("AHDB_Exp1_MS1_AgeCont.csv")
+str(AHDB_Exp1_MS1_AgeCont)
+
+AHDB_Exp1_MS1_AgeCont$Outcome <- factor(
+  AHDB_Exp1_MS1_AgeCont$Outcome,
+  levels = c("No", "Succumbed")
+)
+
+firth_fit_sex_agecont <- logistf(Outcome ~  Sex + Age_Treatment, # + Sex*Age_Treatment,  
+                            data = AHDB_Exp1_MS1_AgeCont)
+summary(firth_fit_sex_agecont)
+
+exp(coef(firth_fit_sex_agecont)) 
+exp(confint(firth_fit_sex_agecont))
+
+# Result:
+# Sex p= 0.03089619*
+# Age_Treatment p= 0.02285775*
+
+firth_fit_sex_agecont_int <- logistf(Outcome ~  Sex + Age_Treatment + Sex*Age_Treatment,  
+                            data = AHDB_Exp1_MS1_AgeCont)
+summary(firth_fit_sex_agecont_int)
+
+exp(coef(firth_fit_sex_agecont_int)) 
+exp(confint(firth_fit_sex_agecont_int))
+
+# Result with interaction:
+#SexM               p= 0.10955656      
+#Age_Treatment      p= 0.02259065*      
+#SexM:Age_Treatment p= 0.24617014  
+
+# Compare the two models (with and without interaction)
+summary(firth_fit_sex_agecont_int, firth_fit_sex_agecont)
+
+# P = 2.379539e-06*
+```
 
 #Export Model Stats (For all Models)
 
