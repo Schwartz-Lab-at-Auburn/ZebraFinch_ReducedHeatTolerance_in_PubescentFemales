@@ -428,7 +428,7 @@ Younger_females_Ket %>%
 
 # Sample Size: 43
 ```
-# GLMER -> Ketone Model (Includes Lysed Plasma Individuals)
+# GLM -> Ketone Model (Includes Lysed Plasma Individuals)
 
 ```{r}
 
@@ -477,7 +477,7 @@ Younger_females_Hem %>%
 # Sample Size: 41
 ```
 
-# GLMER -> Hematocrit Model (Includes Lysed Plasma Individuals)
+# GLM -> Hematocrit Model (Includes Lysed Plasma Individuals)
 
 ```{r}
 
@@ -565,7 +565,7 @@ hist(Younger_females_Mito$Blood_mtDNA.Mean)
 #[1] 0.7780359
 ```
 
-# GLMER -> mtDNA Copy Number Model
+# GLM -> mtDNA Copy Number Model
 ```{r}
 
 Mito_Model <- glm(Died_InTrt ~  Blood_mtDNA.Mean,
@@ -601,7 +601,7 @@ hist(Younger_females_Telo$Blood_Telomeres.per.cell)
 #[1] 1629.904
 ```
 
-# GLMER -> Telomere (T/S ratio) Model (WITH LYSED BUT NO Mom_ID)
+# GLM -> Telomere (T/S ratio) Model (WITH LYSED BUT NO Mom_ID)
 ```{r}
 
 Telomeres_Model <- glm(Died_InTrt ~  Blood_Telomeres.per.cell,
@@ -892,6 +892,149 @@ Model_Results <- bind_rows(
 Model_Results
 
 write.csv(Model_Results, "Model_Summary_Table.csv", row.names = FALSE)
+
+```
+
+
+# Testing Hypothesis 3 Model Assumptions
+
+```{r}
+
+library(detectseparation); library(lme4)
+
+mods <- list(
+  Glucose    = Glucose_Model,
+  Ketone     = Ketone_Model,
+  Hematocrit = Hematocrit_Model,
+  CORT       = CORT_Model,
+  mtDNA      = Mito_Model,
+  Telomere   = Telomeres_Model
+)
+
+dats <- list(
+  Glucose    = Younger_females_Glu,
+  Ketone     = Younger_females_Ket,
+  Hematocrit = Younger_females_Hem,
+  CORT       = Younger_females_CORT,
+  mtDNA      = Younger_females_Mito,
+  Telomere   = Younger_females_Telo
+)
+
+# 1. Separation check: Finite MLE indicates no quasi & complete separation
+for (nm in names(mods)) {
+  cat("\n---", nm, "---\n")
+  
+  print(
+    glm(
+      formula(mods[[nm]]),
+      family = binomial,
+      data = dats[[nm]],
+      method = "detect_separation"
+    )
+  )
+}
+
+
+# 2. Test linearity on the logit scale
+# Compare linear model vs. model with quadratic term
+
+linearity_check <- lapply(names(mods), function(nm) {
+  
+  m <- mods[[nm]]
+  xn <- names(model.frame(m))[2]
+  
+  m2 <- update(
+    m,
+    as.formula(
+      paste(". ~ . + I(", xn, "^2)")
+    )
+  )
+  
+  lrt <- anova(m, m2, test = "LRT")
+  
+  data.frame(
+    Model = nm,
+    p_LRT = lrt$`Pr(>Chi)`[2]
+  )
+  
+}) %>%
+  bind_rows()
+
+linearity_check
+
+# 3. Random effects: Mom ID and Cohort tested separately
+
+re_check <- lapply(names(mods), function(nm) {
+
+  m <- mods[[nm]]
+  f <- formula(m)
+  d <- dats[[nm]]
+
+  glm_m <- glm(f, data = d, family = binomial)
+  mom_m <- glmer(update(f, . ~ . + (1 | Mom_ID)), data = d, family = binomial)
+  coh_m <- glmer(update(f, . ~ . + (1 | Cohort)), data = d, family = binomial)
+
+  data.frame(
+    Model           = nm,
+    Mom_variance    = as.numeric(VarCorr(mom_m)$Mom_ID),
+    Cohort_variance = as.numeric(VarCorr(coh_m)$Cohort),
+    Mom_singular    = isSingular(mom_m),
+    Cohort_singular = isSingular(coh_m),
+    beta_GLM        = unname(coef(glm_m)[2]),
+    p_GLM           = summary(glm_m)$coefficients[2, 4]
+  )
+
+}) %>% bind_rows()
+
+re_check
+
+
+# 4. Hematocrit: GLM vs.GLMER with Mom ID & Cohort Random Effects (both run separately)
+
+h_glm <- glm(
+  Died_InTrt ~ Hematocrit,
+  data = Younger_females_Hem,
+  family = binomial
+)
+
+h_mom <- glmer(
+  Died_InTrt ~ Hematocrit + (1 | Mom_ID),
+  data = Younger_females_Hem,
+  family = binomial
+)
+
+h_coh <- glmer(
+  Died_InTrt ~ Hematocrit + (1 | Cohort),
+  data = Younger_females_Hem,
+  family = binomial
+)
+
+round(
+  rbind(
+    glm = summary(h_glm)$coefficients[2, ],
+    mom_RE = summary(h_mom)$coefficients[2, ],
+    coh_RE = summary(h_coh)$coefficients[2, ]
+  ),
+  4
+)
+
+# 5. CORT: GLM vs. GLMER (Random Effect:Cohort)
+
+c_glm <- CORT_Model
+
+c_coh <- glmer(
+  Died_InTrt ~ CORT.ng.mL. + (1 | Cohort),
+  data = Younger_females_CORT,
+  family = binomial
+)
+
+round(
+  rbind(
+    glm = summary(c_glm)$coefficients[2, ],
+    coh_RE = summary(c_coh)$coefficients[2, ]
+  ),
+  4
+)
 
 ```
 
