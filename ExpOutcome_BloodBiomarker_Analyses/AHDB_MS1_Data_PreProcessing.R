@@ -1,7 +1,7 @@
 
 # Title: Acute Heat Damage Biomarkers Experiment 1 (Manuscript 1 ~ Baseline Biomarkers & Acute Heat Mortality)
 
-# Purpose: This script was used to merge data from qPCR (mitochondria and telomeres), hormone data (CORT), with the experiment master spreadsheet 
+# Purpose: This script was used to merge data from qPCR (mitochondria and telomeres) with the experiment master spreadsheet 
 
 # Clear memory
 rm(list=ls(all = TRUE))
@@ -191,16 +191,13 @@ Plate1_FinalData <- Plate1_FinalData %>%
   ungroup()
 
 
-### Final Data Processing & Filtering - mtDNA and Telomeres, and CORT
+### Final Data Processing & Filtering - mtDNA and Telomeres
 # Read CSV files
 
 MasterSpreadsheet <- read.csv("AHDB_Exp1_BloodData.csv", header=T, sep = ",", as.is=T)
 str(MasterSpreadsheet)
 
 MitoTelo <- Plate1_FinalData
-
-CORT <- read.csv("AHDB_CORT_FileForMasterDataset.csv", header=T, sep = ",", as.is=T)
-str(CORT)
 
 # Clean MitoTelo Dataset 
 # 1. Set Sample Column Name to ID_Band,
@@ -236,32 +233,13 @@ MitoBlood_Merge <- merge(MasterSpreadsheet, mito_subset,
                          by = c("ID_Band", "TimePoint"), all.x = TRUE)
 head(MitoBlood_Merge)
 
-# Clean CORT Dataset
-# 1. Align Column Names to match MitoBlood Merge
-# 2. Change ID Band to integer 
-
-# Fix Column Names
-colnames(CORT)[colnames(CORT) == "BirdID"] <- "ID_Band"
-
-# Ensure matching types
-CORT$ID_Band <- as.integer(CORT$ID_Band)
-
-# Subset CORT Columns Needed
-
-CORT_subset <- CORT[, c("PlateNumber", "TubeID", "ID_Band", "TimePoint", "Extractor", "CORT.ng.mL.", "Notes")]
-
-
-# Merge CORT into MasterSpreadsheet by ID_Band and TimePoint
-AHDB_Exp1_Final <- merge(MitoBlood_Merge, CORT_subset, 
-                         by = c("ID_Band", "TimePoint"), all.x = TRUE)
-
 #Export to csv
-write.csv(AHDB_Exp1_Final, 
+write.csv(MitoBlood_Merge, 
           file = "AHDB_Exp1_MasterSpreadSheet_Final.csv", 
           row.names = FALSE)
 
 #Subset Data for MS1
-AHDB_Exp1_MS1 <- AHDB_Exp1_Final %>%
+AHDB_Exp1_MS1 <- MitoBlood_Merge %>%
   filter(TimePoint == "Baseline",
          Treatment     != "A")
 
@@ -269,3 +247,4 @@ AHDB_Exp1_MS1 <- AHDB_Exp1_Final %>%
 write.csv(AHDB_Exp1_MS1, 
           file = "AHDB_Exp1_MS1.csv", 
           row.names = FALSE)
+
